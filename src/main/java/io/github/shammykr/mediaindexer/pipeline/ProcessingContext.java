@@ -41,7 +41,12 @@ public class ProcessingContext {
 
     public BufferedImage image() throws IOException {
         if (image == null) {
-            image = ImageIO.read(new ByteArrayInputStream(original));
+            try {
+                image = ImageIO.read(new ByteArrayInputStream(original));
+            } catch (IOException e) {
+                // A corrupt file will fail the same way on every attempt.
+                throw new NonRetryableProcessingException("corrupt image: " + e.getMessage(), e);
+            }
             if (image == null) {
                 throw new NonRetryableProcessingException("cannot decode image (" + document.getContentType() + ")");
             }
