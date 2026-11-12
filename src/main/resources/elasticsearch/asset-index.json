@@ -1,0 +1,52 @@
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0,
+    "refresh_interval": "1s",
+    "analysis": {
+      "tokenizer": {
+        "filename_tokenizer": { "type": "pattern", "pattern": "[^\\p{L}\\p{N}]+" }
+      },
+      "analyzer": {
+        "filename_analyzer": { "type": "custom", "tokenizer": "filename_tokenizer", "filter": ["lowercase"] }
+      }
+    }
+  },
+  "mappings": {
+    "dynamic": false,
+    "properties": {
+      "assetId":         { "type": "keyword" },
+      "filename":        { "type": "text", "analyzer": "filename_analyzer", "fields": { "raw": { "type": "keyword" } } },
+      "title":           { "type": "text", "analyzer": "english", "fields": { "raw": { "type": "keyword" } } },
+      "contentType":     { "type": "keyword" },
+      "fileType":        { "type": "keyword" },
+      "category":        { "type": "keyword" },
+      "sizeBytes":       { "type": "long" },
+      "width":           { "type": "integer" },
+      "height":          { "type": "integer" },
+      "pageCount":       { "type": "integer" },
+      "exif":            { "type": "flattened" },
+      "capturedAt":      { "type": "date" },
+      "tags":            { "type": "keyword", "fields": { "text": { "type": "text", "analyzer": "english" } } },
+      "labels":          { "type": "object", "enabled": false },
+      "content":         { "type": "text", "analyzer": "english" },
+      "bucket":          { "type": "keyword" },
+      "objectKey":       { "type": "keyword" },
+      "thumbnailKey":    { "type": "keyword", "index": false },
+      "convertedKey":    { "type": "keyword", "index": false },
+      "convertedFormat": { "type": "keyword" },
+      "status":          { "type": "keyword" },
+      "error":           { "type": "text", "index": false },
+      "stagesCompleted": { "type": "keyword" },
+      "uploadedAt":      { "type": "date" },
+      "processedAt":     { "type": "date" },
+      "embedding": {
+        "type": "dense_vector",
+        "dims": "${embeddingDims}",
+        "index": true,
+        "similarity": "cosine",
+        "index_options": { "type": "hnsw", "m": 16, "ef_construction": 100 }
+      }
+    }
+  }
+}
