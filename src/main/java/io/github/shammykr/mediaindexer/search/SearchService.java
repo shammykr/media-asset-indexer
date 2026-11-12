@@ -30,7 +30,12 @@ import org.springframework.stereotype.Service;
 public class SearchService {
 
     /** Relative weight of the kNN clause in hybrid mode (BM25 scores are unbounded, kNN scores are 0..1). */
-    private static final float HYBRID_KNN_BOOST = 5.0f;
+    private static final float HYBRID_KNN_BOOST = 2.0f;
+    /**
+     * Minimum cosine similarity for a text-query kNN hit. kNN always returns k neighbours, so without a floor
+     * unrelated assets would be padded into results.
+     */
+    private static final float TEXT_QUERY_MIN_SIMILARITY = 0.2f;
     private static final String[] KEYWORD_FIELDS = {"title^3", "tags.text^2.5", "filename^2", "content"};
 
     private final ElasticsearchClient es;
@@ -73,7 +78,8 @@ public class SearchService {
         if (mode != SearchMode.KEYWORD) {
             List<Float> vector = toList(ml.embedText(c.query()));
             int k = from + c.size();
-            req.knn(knn(vector, k, filters, mode == SearchMode.HYBRID ? HYBRID_KNN_BOOST : 1.0f));
+            req.knn(knn(vector, k, filters, mode == SearchMode.HYBRID ? HYBRID_KNN_BOOST : 1.0f,
+                    TEXT_QUERY_MIN_SIMILARITY));
         }
         addFacets(req);
 
@@ -88,18 +94,24 @@ public class SearchService {
                 .index(index.indexName())
                 .size(size)
                 .source(s -> s.filter(f -> f.excludes("embedding", "content", "labels", "exif")))
-                .knn(knn(vector, size, List.of(notSelf), 1.0f))
+                .knn(knn(vector, size, List.of(notSelf), 1.0f, null))
                 .build();
         return toResponse(es.search(req, AssetDocument.class), "SIMILAR", 0, size);
     }
 
-    private static KnnSearch knn(List<Float> vector, int k, List<Query> filters, float boost) {
-        return KnnSearch.of(n -> n.field("embedding")
-                .queryVector(vector)
-                .k(k)
-                .numCandidates(Math.max(100, k * 5))
-                .filter(filters)
-                .boost(boost));
+    private static KnnSearch knn(List<Float> vector, int k, List<Query> filters, float boost, Float minSimilarity) {
+        return KnnSearch.of(n -> {
+            n.field("embedding")
+                    .queryVector(vector)
+                    .k(k)
+                    .numCandidates(Math.max(100, k * 5))
+                    .filter(filters)
+                    .boost(boost);
+            if (minSimilarity != null) {
+                n.similarity(minSimilarity);
+            }
+            return n;
+        });
     }
 
     private static List<Query> filters(SearchCriteria c) {
@@ -140,7 +152,8 @@ public class SearchService {
         for (Hit<AssetDocument> h : r.hits().hits()) {
             AssetDocument d = h.source();
             if (d == null) continue;
-            hits.add(new SearchResponse.Hit(d.getAssetId(), h.score(), d.getTitle(), d.getFilename(), d.getFileType(),
+            Double score = h.score() == null || h.score().isNaN() ? null : h.score();
+            hits.add(new SearchResponse.Hit(d.getAssetId(), score, d.getTitle(), d.getFilename(), d.getFileType(),
                     d.getCategory(), d.getTags(), d.getWidth(), d.getHeight(), d.getSizeBytes(), d.getUploadedAt(),
                     d.getThumbnailKey() == null ? null : "/api/assets/" + d.getAssetId() + "/content?variant=thumbnail",
                     h.highlight().isEmpty() ? null : h.highlight()));
